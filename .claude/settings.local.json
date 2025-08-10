@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(cmd.exe /c \"dotnet build\")",
+      "Bash(rm:*)"
+    ],
+    "deny": []
+  }
+}
