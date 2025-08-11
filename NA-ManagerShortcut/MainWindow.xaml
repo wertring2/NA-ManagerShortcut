@@ -53,6 +53,7 @@
         <Style x:Key="ToggleButtonStyle" TargetType="ToggleButton">
             <Setter Property="Width" Value="40"/>
             <Setter Property="Height" Value="20"/>
+            <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -208,7 +209,7 @@
                                                  Foreground="White" FontWeight="Bold"/>
                                         <ToggleButton Grid.Column="1" 
                                                     Style="{StaticResource ToggleButtonStyle}"
-                                                    IsChecked="{Binding IsEnabled}"
+                                                    IsChecked="{Binding IsEnabled, Mode=OneWay}"
                                                     Click="ToggleAdapter_Click"
                                                     Tag="{Binding}"/>
                                     </Grid>

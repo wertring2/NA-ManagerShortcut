@@ -10,7 +10,7 @@ namespace NA_ManagerShortcut.Views
     public partial class ConfigurationWindow : Window
     {
         private NetworkAdapterInfo _adapter;
-        private readonly NetworkAdapterService _adapterService;
+        private readonly NetworkAdapterServiceFixed _adapterService;
         
         public event EventHandler? ConfigurationApplied;
 
@@ -22,7 +22,7 @@ namespace NA_ManagerShortcut.Views
             InitializeComponent();
             DataContext = this;
             _adapter = adapter;
-            _adapterService = new NetworkAdapterService();
+            _adapterService = new NetworkAdapterServiceFixed();
             LoadCurrentConfiguration();
         }
 

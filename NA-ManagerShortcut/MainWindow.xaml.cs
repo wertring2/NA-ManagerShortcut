@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -14,6 +16,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using NA_ManagerShortcut.Commands;
 using NA_ManagerShortcut.Models;
 using NA_ManagerShortcut.Services;
 using NA_ManagerShortcut.ViewModels;
@@ -28,6 +31,8 @@ namespace NA_ManagerShortcut
         private const int HOTKEY_ID = 9000;
         private ConfigurationWindow? _configWindow;
         private ProfileWindow? _profileWindow;
+        private DebugWindow? _debugWindow;
+        private readonly ClaudeCodeInterface _claudeInterface;
 
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -43,11 +48,14 @@ namespace NA_ManagerShortcut
             InitializeComponent();
             _viewModel = new MainViewModel();
             DataContext = _viewModel;
+            _claudeInterface = new ClaudeCodeInterface();
             
             _viewModel.ProfilePanelRequested += (s, e) => ShowProfileWindow();
             
             Loaded += MainWindow_Loaded;
             Closing += MainWindow_Closing;
+            
+            SetupDebugHotkey();
             
             var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300));
             BeginAnimation(OpacityProperty, fadeIn);
@@ -171,14 +179,74 @@ namespace NA_ManagerShortcut
             if (sender is ToggleButton toggle && toggle.Tag is NetworkAdapterInfo adapter)
             {
                 e.Handled = true;
+                toggle.IsEnabled = false; // Disable button during operation
                 
-                var service = new NetworkAdapterService();
-                if (adapter.IsEnabled)
-                    await service.DisableAdapterAsync(adapter.DeviceId);
-                else
-                    await service.EnableAdapterAsync(adapter.DeviceId);
+                // Start debug monitoring
+                var debugMonitor = DebugMonitor.Instance;
+                debugMonitor.StartMonitoring(true);
+                
+                try
+                {
+                    debugMonitor.LogEvent($"Toggle adapter clicked: {adapter.Name} (Current state: {adapter.IsEnabled})", 
+                        EventType.Info, new Dictionary<string, object>
+                        {
+                            ["AdapterName"] = adapter.Name,
+                            ["DeviceId"] = adapter.DeviceId,
+                            ["CurrentState"] = adapter.IsEnabled,
+                            ["TargetState"] = !adapter.IsEnabled
+                        });
                     
-                _viewModel.RefreshCommand.Execute(null);
+                    var service = new NetworkAdapterServiceFixed();
+                    bool success;
+                    
+                    if (adapter.IsEnabled)
+                    {
+                        debugMonitor.LogEvent($"Attempting to disable adapter: {adapter.Name}", EventType.Info);
+                        success = await service.DisableAdapterAsync(adapter.DeviceId);
+                    }
+                    else
+                    {
+                        debugMonitor.LogEvent($"Attempting to enable adapter: {adapter.Name}", EventType.Info);
+                        success = await service.EnableAdapterAsync(adapter.DeviceId);
+                    }
+                    
+                    debugMonitor.LogEvent($"Toggle result: {(success ? "Success" : "Failed")}", 
+                        success ? EventType.Info : EventType.Error,
+                        new Dictionary<string, object>
+                        {
+                            ["Success"] = success,
+                            ["AdapterName"] = adapter.Name
+                        });
+                    
+                    if (!success)
+                    {
+                        // Revert toggle state if operation failed
+                        toggle.IsChecked = adapter.IsEnabled;
+                        MessageBox.Show($"Failed to {(adapter.IsEnabled ? "disable" : "enable")} adapter {adapter.Name}.\nPlease check if running as Administrator.", 
+                            "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    
+                    // Add delay to allow adapter state to update
+                    await Task.Delay(1000);
+                    
+                    _viewModel.RefreshCommand.Execute(null);
+                }
+                catch (Exception ex)
+                {
+                    debugMonitor.LogException(ex, new Dictionary<string, object>
+                    {
+                        ["Operation"] = "ToggleAdapter",
+                        ["AdapterName"] = adapter.Name
+                    });
+                    
+                    toggle.IsChecked = adapter.IsEnabled;
+                    MessageBox.Show($"Error toggling adapter: {ex.Message}", "Error", 
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    toggle.IsEnabled = true; // Re-enable button
+                }
             }
         }
 
@@ -195,7 +263,7 @@ namespace NA_ManagerShortcut
         {
             if (sender is MenuItem menu && menu.Tag is NetworkAdapterInfo adapter)
             {
-                var service = new NetworkAdapterService();
+                var service = new NetworkAdapterServiceFixed();
                 await service.ResetAdapterAsync(adapter.DeviceId);
                 _viewModel.RefreshCommand.Execute(null);
             }
@@ -205,7 +273,7 @@ namespace NA_ManagerShortcut
         {
             if (sender is MenuItem menu && menu.Tag is NetworkAdapterInfo adapter)
             {
-                var service = new NetworkAdapterService();
+                var service = new NetworkAdapterServiceFixed();
                 await service.RenewIpAddressAsync(adapter.Name);
                 _viewModel.RefreshCommand.Execute(null);
             }
@@ -265,5 +333,31 @@ namespace NA_ManagerShortcut
             _profileWindow.Show();
             _profileWindow.Activate();
         }
+        
+        private void SetupDebugHotkey()
+        {
+            try
+            {
+                KeyBinding debugBinding = new KeyBinding(
+                    new RelayCommand(_ => ShowDebugWindow()),
+                    new KeyGesture(Key.D, ModifierKeys.Control | ModifierKeys.Shift));
+                InputBindings.Add(debugBinding);
+            }
+            catch { }
+        }
+        
+        private void ShowDebugWindow()
+        {
+            if (_debugWindow == null || !_debugWindow.IsLoaded)
+            {
+                _debugWindow = new DebugWindow();
+                _debugWindow.Owner = this;
+                _debugWindow.Closed += (s, e) => _debugWindow = null;
+            }
+            
+            _debugWindow.Show();
+            _debugWindow.Activate();
+        }
+        
     }
 }

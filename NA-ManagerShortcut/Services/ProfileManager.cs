@@ -86,7 +86,7 @@ namespace NA_ManagerShortcut.Services
             });
         }
 
-        public async Task<bool> ApplyProfileAsync(string profileId, NetworkAdapterService adapterService)
+        public async Task<bool> ApplyProfileAsync(string profileId, NetworkAdapterServiceFixed adapterService)
         {
             var profile = GetProfile(profileId);
             if (profile == null) return false;

@@ -12,7 +12,7 @@ namespace NA_ManagerShortcut.ViewModels
 {
     public class MainViewModel : BaseViewModel
     {
-        private readonly NetworkAdapterService _adapterService;
+        private readonly NetworkAdapterServiceFixed _adapterService;
         private readonly ProfileManager _profileManager;
         private readonly DispatcherTimer _refreshTimer;
         
@@ -138,7 +138,7 @@ namespace NA_ManagerShortcut.ViewModels
 
         public MainViewModel()
         {
-            _adapterService = new NetworkAdapterService();
+            _adapterService = new NetworkAdapterServiceFixed();
             _profileManager = new ProfileManager();
             
             _adapterService.StatusChanged += OnStatusChanged;
@@ -169,7 +169,7 @@ namespace NA_ManagerShortcut.ViewModels
 
             _refreshTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(5)
+                Interval = TimeSpan.FromSeconds(10) // Increased interval for Smart Refresh
             };
             _refreshTimer.Tick += async (s, e) => await RefreshAdaptersAsync();
 
@@ -185,21 +185,94 @@ namespace NA_ManagerShortcut.ViewModels
             IsLoading = true;
             try
             {
-                var adapters = await _adapterService.GetNetworkAdaptersAsync();
+                var newAdapters = await _adapterService.GetNetworkAdaptersAsync();
                 App.Current?.Dispatcher.Invoke(() =>
                 {
-                    NetworkAdapters.Clear();
-                    foreach (var adapter in adapters)
-                    {
-                        NetworkAdapters.Add(adapter);
-                    }
-                    OnPropertyChanged(nameof(FilteredAdapters));
+                    // Smart Refresh: Only update if there are actual changes
+                    UpdateAdaptersSmartly(newAdapters);
                 });
             }
             finally
             {
                 IsLoading = false;
             }
+        }
+
+        private void UpdateAdaptersSmartly(List<NetworkAdapterInfo> newAdapters)
+        {
+            // Check if we need to update at all
+            bool needsUpdate = false;
+            
+            // Check if adapter count changed
+            if (NetworkAdapters.Count != newAdapters.Count)
+            {
+                needsUpdate = true;
+            }
+            else
+            {
+                // Check each adapter for changes
+                for (int i = 0; i < NetworkAdapters.Count; i++)
+                {
+                    var existing = NetworkAdapters.FirstOrDefault(a => a.DeviceId == newAdapters[i].DeviceId);
+                    if (existing == null)
+                    {
+                        needsUpdate = true;
+                        break;
+                    }
+                    
+                    // Check if important properties changed (but NOT just stats)
+                    if (HasSignificantChanges(existing, newAdapters[i]))
+                    {
+                        // Update only the changed properties without replacing the object
+                        UpdateAdapterProperties(existing, newAdapters[i]);
+                    }
+                }
+            }
+            
+            // Only rebuild collection if structure changed
+            if (needsUpdate)
+            {
+                NetworkAdapters.Clear();
+                foreach (var adapter in newAdapters)
+                {
+                    NetworkAdapters.Add(adapter);
+                }
+                OnPropertyChanged(nameof(FilteredAdapters));
+            }
+        }
+        
+        private bool HasSignificantChanges(NetworkAdapterInfo existing, NetworkAdapterInfo newAdapter)
+        {
+            // Check only significant properties (not stats that change frequently)
+            return existing.IsEnabled != newAdapter.IsEnabled ||
+                   existing.Status != newAdapter.Status ||
+                   existing.IpAddress != newAdapter.IpAddress ||
+                   existing.SubnetMask != newAdapter.SubnetMask ||
+                   existing.DefaultGateway != newAdapter.DefaultGateway ||
+                   existing.DnsServers != newAdapter.DnsServers ||
+                   existing.IsDhcpEnabled != newAdapter.IsDhcpEnabled;
+        }
+        
+        private void UpdateAdapterProperties(NetworkAdapterInfo existing, NetworkAdapterInfo newAdapter)
+        {
+            // Update properties without triggering unnecessary bindings
+            // Skip IsEnabled update if it hasn't changed to prevent animation
+            if (existing.IsEnabled != newAdapter.IsEnabled)
+            {
+                existing.IsEnabled = newAdapter.IsEnabled;
+            }
+            
+            existing.Status = newAdapter.Status;
+            existing.IpAddress = newAdapter.IpAddress;
+            existing.SubnetMask = newAdapter.SubnetMask;
+            existing.DefaultGateway = newAdapter.DefaultGateway;
+            existing.DnsServers = newAdapter.DnsServers;
+            existing.IsDhcpEnabled = newAdapter.IsDhcpEnabled;
+            
+            // Update stats silently
+            existing.BytesReceived = newAdapter.BytesReceived;
+            existing.BytesSent = newAdapter.BytesSent;
+            existing.Speed = newAdapter.Speed;
         }
 
         private async Task ToggleSelectedAdapterAsync()

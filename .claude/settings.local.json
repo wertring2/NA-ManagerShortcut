@@ -3,7 +3,12 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(cmd.exe /c \"dotnet build\")",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(dotnet build)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(dotnet build:*)",
+      "Bash(powershell.exe:*)"
     ],
     "deny": []
   }

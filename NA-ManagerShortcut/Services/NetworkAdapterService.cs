@@ -12,8 +12,15 @@ namespace NA_ManagerShortcut.Services
 {
     public class NetworkAdapterService
     {
+        private readonly DebugMonitor _debugMonitor;
+        
         public event EventHandler<string>? StatusChanged;
         public event EventHandler? AdaptersUpdated;
+        
+        public NetworkAdapterService()
+        {
+            _debugMonitor = DebugMonitor.Instance;
+        }
 
         public async Task<List<NetworkAdapterInfo>> GetNetworkAdaptersAsync()
         {
@@ -83,6 +90,7 @@ namespace NA_ManagerShortcut.Services
                 }
                 catch (Exception ex)
                 {
+                    _debugMonitor.LogException(ex, new Dictionary<string, object> { ["Operation"] = "GetNetworkAdapters" });
                     StatusChanged?.Invoke(this, $"Error getting adapters: {ex.Message}");
                 }
 
@@ -105,7 +113,10 @@ namespace NA_ManagerShortcut.Services
                     adapter.BytesSent = stats.BytesSent;
                 }
             }
-            catch { }
+            catch (Exception ex) 
+            {
+                _debugMonitor.LogEvent($"Failed to update network statistics for {adapter.Name}", EventType.Warning);
+            }
         }
 
         private string GetConnectionStatus(int status)
@@ -141,6 +152,7 @@ namespace NA_ManagerShortcut.Services
 
         private async Task<bool> ToggleAdapterAsync(string deviceId, bool enable)
         {
+            var stopwatch = Stopwatch.StartNew();
             return await Task.Run(() =>
             {
                 try
@@ -151,19 +163,71 @@ namespace NA_ManagerShortcut.Services
                     var adapters = searcher.Get();
                     foreach (ManagementObject adapter in adapters)
                     {
-                        var result = adapter.InvokeMethod(enable ? "Enable" : "Disable", null);
-                        var success = Convert.ToUInt32(result) == 0;
-                        
-                        StatusChanged?.Invoke(this, success 
-                            ? $"Adapter {(enable ? "enabled" : "disabled")} successfully" 
-                            : $"Failed to {(enable ? "enable" : "disable")} adapter");
-                        
-                        if (success) AdaptersUpdated?.Invoke(this, EventArgs.Empty);
-                        return success;
+                        try
+                        {
+                            _debugMonitor.LogEvent($"Invoking WMI method: {(enable ? "Enable" : "Disable")} on DeviceID: {deviceId}", EventType.Info);
+                            
+                            var methodName = enable ? "Enable" : "Disable";
+                            var outParams = adapter.InvokeMethod(methodName, null, null);
+                            
+                            uint returnValue = 0;
+                            if (outParams != null && outParams["ReturnValue"] != null)
+                            {
+                                returnValue = Convert.ToUInt32(outParams["ReturnValue"]);
+                            }
+                            else if (outParams is ManagementBaseObject mbo)
+                            {
+                                // Try to get return value from the result object
+                                var returnProp = mbo.Properties["ReturnValue"];
+                                if (returnProp != null && returnProp.Value != null)
+                                {
+                                    returnValue = Convert.ToUInt32(returnProp.Value);
+                                }
+                            }
+                            
+                            var success = returnValue == 0;
+                            
+                            _debugMonitor.LogEvent($"WMI method result: ReturnValue={returnValue}, Success={success}", 
+                                success ? EventType.Info : EventType.Error,
+                                new Dictionary<string, object> 
+                                { 
+                                    ["ReturnValue"] = returnValue,
+                                    ["Method"] = methodName,
+                                    ["DeviceId"] = deviceId
+                                });
+                            
+                            StatusChanged?.Invoke(this, success 
+                                ? $"Adapter {(enable ? "enabled" : "disabled")} successfully" 
+                                : $"Failed to {(enable ? "enable" : "disable")} adapter (Return code: {returnValue})");
+                            
+                            _debugMonitor.LogNetworkOperation(
+                                enable ? "EnableAdapter" : "DisableAdapter",
+                                deviceId,
+                                success,
+                                stopwatch.Elapsed);
+                            
+                            if (success) AdaptersUpdated?.Invoke(this, EventArgs.Empty);
+                            return success;
+                        }
+                        catch (Exception innerEx)
+                        {
+                            _debugMonitor.LogException(innerEx, new Dictionary<string, object>
+                            {
+                                ["Operation"] = "WMI Method Invocation",
+                                ["Method"] = enable ? "Enable" : "Disable",
+                                ["DeviceId"] = deviceId
+                            });
+                            throw;
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
+                    _debugMonitor.LogException(ex, new Dictionary<string, object> 
+                    { 
+                        ["Operation"] = enable ? "EnableAdapter" : "DisableAdapter",
+                        ["DeviceId"] = deviceId 
+                    });
                     StatusChanged?.Invoke(this, $"Error toggling adapter: {ex.Message}");
                 }
                 return false;
@@ -173,6 +237,15 @@ namespace NA_ManagerShortcut.Services
         public async Task<bool> SetStaticIpAsync(string deviceId, string ipAddress, string subnetMask, 
             string gateway, string primaryDns, string secondaryDns)
         {
+            var stopwatch = Stopwatch.StartNew();
+            _debugMonitor.LogEvent("Setting static IP configuration", EventType.Info, new Dictionary<string, object>
+            {
+                ["DeviceId"] = deviceId,
+                ["IP"] = ipAddress,
+                ["Subnet"] = subnetMask,
+                ["Gateway"] = gateway
+            });
+            
             return await Task.Run(() =>
             {
                 try
@@ -221,6 +294,8 @@ namespace NA_ManagerShortcut.Services
                                     ? "Static IP configured successfully" 
                                     : "Failed to set DNS servers");
                                 
+                                _debugMonitor.LogNetworkOperation("SetStaticIP", deviceId, success, stopwatch.Elapsed);
+                                
                                 if (success) AdaptersUpdated?.Invoke(this, EventArgs.Empty);
                                 return success;
                             }
@@ -232,6 +307,12 @@ namespace NA_ManagerShortcut.Services
                 }
                 catch (Exception ex)
                 {
+                    _debugMonitor.LogException(ex, new Dictionary<string, object> 
+                    { 
+                        ["Operation"] = "SetStaticIP",
+                        ["DeviceId"] = deviceId,
+                        ["IP"] = ipAddress
+                    });
                     StatusChanged?.Invoke(this, $"Error setting static IP: {ex.Message}");
                 }
                 return false;
@@ -271,6 +352,11 @@ namespace NA_ManagerShortcut.Services
                 }
                 catch (Exception ex)
                 {
+                    _debugMonitor.LogException(ex, new Dictionary<string, object> 
+                    { 
+                        ["Operation"] = "EnableDHCP",
+                        ["DeviceId"] = deviceId 
+                    });
                     StatusChanged?.Invoke(this, $"Error enabling DHCP: {ex.Message}");
                 }
                 return false;
@@ -328,6 +414,11 @@ namespace NA_ManagerShortcut.Services
                 }
                 catch (Exception ex)
                 {
+                    _debugMonitor.LogException(ex, new Dictionary<string, object> 
+                    { 
+                        ["Operation"] = "RunNetshCommand",
+                        ["Arguments"] = arguments 
+                    });
                     StatusChanged?.Invoke(this, $"Error running command: {ex.Message}");
                     return false;
                 }

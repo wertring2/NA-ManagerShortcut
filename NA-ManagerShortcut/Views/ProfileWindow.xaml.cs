@@ -15,7 +15,7 @@ namespace NA_ManagerShortcut.Views
     public partial class ProfileWindow : Window, INotifyPropertyChanged
     {
         private readonly ProfileManager _profileManager;
-        private readonly NetworkAdapterService _adapterService;
+        private readonly NetworkAdapterServiceFixed _adapterService;
         private readonly MainViewModel _mainViewModel;
         private NetworkProfile? _selectedProfile;
         private string _statusMessage = "";
@@ -52,7 +52,7 @@ namespace NA_ManagerShortcut.Views
             
             _mainViewModel = mainViewModel;
             _profileManager = new ProfileManager();
-            _adapterService = new NetworkAdapterService();
+            _adapterService = new NetworkAdapterServiceFixed();
             
             Profiles = new ObservableCollection<NetworkProfile>();
             LoadProfiles();
