@@ -40,7 +40,8 @@ namespace NA_ManagerShortcut
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        private const uint MOD_WIN = 0x0008;
+        private const uint MOD_CONTROL = 0x0002;
+        private const uint MOD_ALT = 0x0001;
         private const uint VK_N = 0x4E;
 
         public MainWindow()
@@ -67,7 +68,7 @@ namespace NA_ManagerShortcut
             _hwndSource = HwndSource.FromHwnd(helper.Handle);
             _hwndSource?.AddHook(WndProc);
             
-            RegisterHotKey(helper.Handle, HOTKEY_ID, MOD_WIN, VK_N);
+            RegisterHotKey(helper.Handle, HOTKEY_ID, MOD_CONTROL | MOD_ALT, VK_N);
             
             _viewModel.StartAutoRefresh();
         }
@@ -382,6 +383,244 @@ namespace NA_ManagerShortcut
             
             _debugWindow.Show();
             _debugWindow.Activate();
+        }
+
+        private void UserGuide_Click(object sender, RoutedEventArgs e)
+        {
+            var guideWindow = new Window
+            {
+                Title = "User Guide - Network Adapter Manager",
+                Width = 600,
+                Height = 500,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/favicon.ico"))
+            };
+
+            var scrollViewer = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Padding = new Thickness(20)
+            };
+
+            var stackPanel = new StackPanel();
+
+            // Title
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "Network Adapter Manager - User Guide",
+                FontSize = 20,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 20)
+            });
+
+            // Hotkeys section
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "Hotkeys:",
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "• Ctrl + Alt + N : Show/Hide application window",
+                Margin = new Thickness(20, 0, 0, 5)
+            });
+
+            // Features section
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "\nFeatures:",
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 10, 0, 10)
+            });
+
+            var features = new[]
+            {
+                "• Enable/Disable network adapters with one click",
+                "• Configure static IP or DHCP",
+                "• Rename adapters with custom names",
+                "• Hide/Show adapters from the list",
+                "• Save and apply network profiles",
+                "• Real-time network statistics monitoring",
+                "• System tray integration",
+                "• Always-on-top overlay window"
+            };
+
+            foreach (var feature in features)
+            {
+                stackPanel.Children.Add(new TextBlock
+                {
+                    Text = feature,
+                    Margin = new Thickness(20, 0, 0, 5),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+
+            // How to use section
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "\nHow to Use:",
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 10, 0, 10)
+            });
+
+            var instructions = new[]
+            {
+                "1. Toggle Adapter: Click the switch button to enable/disable",
+                "2. Configure IP: Right-click adapter → Configure IP",
+                "3. Rename Adapter: Right-click adapter → Rename Adapter",
+                "4. Hide Adapter: Right-click adapter → Hide Adapter",
+                "5. Show Hidden: Check 'Show Hidden' checkbox in title bar",
+                "6. Copy Details: Right-click adapter → Copy Details",
+                "7. Reset Adapter: Right-click adapter → Reset Adapter"
+            };
+
+            foreach (var instruction in instructions)
+            {
+                stackPanel.Children.Add(new TextBlock
+                {
+                    Text = instruction,
+                    Margin = new Thickness(20, 0, 0, 5),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+
+            // Requirements
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "\nRequirements:",
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 10, 0, 10)
+            });
+
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "• Windows 10/11\n• Administrator privileges\n• .NET 9.0 Runtime",
+                Margin = new Thickness(20, 0, 0, 5)
+            });
+
+            scrollViewer.Content = stackPanel;
+            guideWindow.Content = scrollViewer;
+            guideWindow.ShowDialog();
+        }
+
+        private void About_Click(object sender, RoutedEventArgs e)
+        {
+            var aboutWindow = new Window
+            {
+                Title = "About - Network Adapter Manager",
+                Width = 450,
+                Height = 350,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/favicon.ico"))
+            };
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // Logo and title
+            var headerPanel = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 20, 0, 20)
+            };
+
+            headerPanel.Children.Add(new System.Windows.Controls.Image
+            {
+                Source = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/favicon.ico")),
+                Width = 64,
+                Height = 64,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = "Network Adapter Manager",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
+
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = "Version 1.0.0",
+                FontSize = 12,
+                Foreground = System.Windows.Media.Brushes.Gray,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 5, 0, 0)
+            });
+
+            Grid.SetRow(headerPanel, 0);
+            grid.Children.Add(headerPanel);
+
+            // Credits
+            var creditsPanel = new StackPanel
+            {
+                Margin = new Thickness(40, 0, 40, 20)
+            };
+
+            creditsPanel.Children.Add(new TextBlock
+            {
+                Text = "Developed by",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            creditsPanel.Children.Add(new TextBlock
+            {
+                Text = "Q WAVE COMPANY LIMITED",
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 120, 215)),
+                Margin = new Thickness(0, 0, 0, 20)
+            });
+
+            creditsPanel.Children.Add(new TextBlock
+            {
+                Text = "© 2024 Q WAVE COMPANY LIMITED",
+                FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 5)
+            });
+
+            creditsPanel.Children.Add(new TextBlock
+            {
+                Text = "All Rights Reserved",
+                FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = System.Windows.Media.Brushes.Gray
+            });
+
+            Grid.SetRow(creditsPanel, 1);
+            grid.Children.Add(creditsPanel);
+
+            // Close button
+            var closeButton = new Button
+            {
+                Content = "Close",
+                Width = 100,
+                Height = 30,
+                Margin = new Thickness(0, 0, 0, 20),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            closeButton.Click += (s, args) => aboutWindow.Close();
+
+            Grid.SetRow(closeButton, 2);
+            grid.Children.Add(closeButton);
+
+            aboutWindow.Content = grid;
+            aboutWindow.ShowDialog();
         }
         
     }

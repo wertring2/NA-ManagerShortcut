@@ -104,7 +104,7 @@ The application follows MVVM (Model-View-ViewModel) pattern with service layer:
 ### Key Features
 
 - Always-on-top overlay window with transparency
-- Hotkey support (Win+N) to show/hide
+- Hotkey support (Ctrl+Alt+N) to show/hide
 - System tray integration
 - Real-time network adapter monitoring
 - One-click enable/disable adapters

@@ -409,6 +409,19 @@
                     <ContextMenu>
                         <MenuItem Header="Show" Click="ShowWindow_Click"/>
                         <Separator/>
+                        <MenuItem Header="User Guide" Click="UserGuide_Click">
+                            <MenuItem.Icon>
+                                <Path Data="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" 
+                                      Fill="Black" Width="16" Height="16" Stretch="Uniform"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="About" Click="About_Click">
+                            <MenuItem.Icon>
+                                <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" 
+                                      Fill="Black" Width="16" Height="16" Stretch="Uniform"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <Separator/>
                         <MenuItem Header="Exit" Click="ExitApplication_Click"/>
                     </ContextMenu>
                 </tb:TaskbarIcon.ContextMenu>
