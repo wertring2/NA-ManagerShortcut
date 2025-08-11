@@ -14,6 +14,7 @@ namespace NA_ManagerShortcut.ViewModels
     {
         private readonly NetworkAdapterServiceFixed _adapterService;
         private readonly ProfileManager _profileManager;
+        private readonly AdapterPreferencesService _preferencesService;
         private readonly DispatcherTimer _refreshTimer;
         
         private ObservableCollection<NetworkAdapterInfo> _networkAdapters = new();
@@ -36,16 +37,19 @@ namespace NA_ManagerShortcut.ViewModels
         {
             get
             {
-                if (string.IsNullOrWhiteSpace(SearchText))
-                    return NetworkAdapters;
+                var adapters = ShowHiddenAdapters 
+                    ? NetworkAdapters.AsEnumerable() 
+                    : NetworkAdapters.Where(a => !a.IsHidden);
+                
+                if (!string.IsNullOrWhiteSpace(SearchText))
+                {
+                    adapters = adapters.Where(a =>
+                        a.DisplayName.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
+                        a.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
+                        a.IpAddress.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
+                }
 
-                var filtered = NetworkAdapters.Where(a =>
-                    a.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-                    a.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-                    a.IpAddress.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                return new ObservableCollection<NetworkAdapterInfo>(filtered);
+                return new ObservableCollection<NetworkAdapterInfo>(adapters.ToList());
             }
         }
 
@@ -133,6 +137,20 @@ namespace NA_ManagerShortcut.ViewModels
         public ICommand ExportProfileCommand { get; }
         public ICommand ToggleConfigPanelCommand { get; }
         public ICommand ToggleProfilePanelCommand { get; }
+        public ICommand RenameAdapterCommand { get; }
+        public ICommand ToggleHideAdapterCommand { get; }
+        public ICommand ShowHiddenAdaptersCommand { get; }
+
+        private bool _showHiddenAdapters;
+        public bool ShowHiddenAdapters
+        {
+            get => _showHiddenAdapters;
+            set 
+            { 
+                SetProperty(ref _showHiddenAdapters, value);
+                OnPropertyChanged(nameof(FilteredAdapters));
+            }
+        }
 
         public event EventHandler? ProfilePanelRequested;
 
@@ -140,6 +158,7 @@ namespace NA_ManagerShortcut.ViewModels
         {
             _adapterService = new NetworkAdapterServiceFixed();
             _profileManager = new ProfileManager();
+            _preferencesService = new AdapterPreferencesService();
             
             _adapterService.StatusChanged += OnStatusChanged;
             _adapterService.AdaptersUpdated += async (s, e) => await RefreshAdaptersAsync();
@@ -166,10 +185,14 @@ namespace NA_ManagerShortcut.ViewModels
                 ShowProfilePanel = !ShowProfilePanel;
                 ProfilePanelRequested?.Invoke(this, EventArgs.Empty);
             });
+            RenameAdapterCommand = new RelayCommand(async param => await RenameAdapterAsync(param),
+                _ => SelectedAdapter != null);
+            ToggleHideAdapterCommand = new RelayCommand(async param => await ToggleHideAdapterAsync(param));
+            ShowHiddenAdaptersCommand = new RelayCommand(_ => ShowHiddenAdapters = !ShowHiddenAdapters);
 
             _refreshTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(10) // Increased interval for Smart Refresh
+                Interval = TimeSpan.FromSeconds(3) // Faster refresh rate
             };
             _refreshTimer.Tick += async (s, e) => await RefreshAdaptersAsync();
 
@@ -186,6 +209,18 @@ namespace NA_ManagerShortcut.ViewModels
             try
             {
                 var newAdapters = await _adapterService.GetNetworkAdaptersAsync();
+                
+                // Load preferences for each adapter
+                foreach (var adapter in newAdapters)
+                {
+                    var pref = _preferencesService.GetPreference(adapter.DeviceId);
+                    if (pref != null)
+                    {
+                        adapter.CustomName = pref.CustomName;
+                        adapter.IsHidden = pref.IsHidden;
+                    }
+                }
+                
                 App.Current?.Dispatcher.Invoke(() =>
                 {
                     // Smart Refresh: Only update if there are actual changes
@@ -220,6 +255,9 @@ namespace NA_ManagerShortcut.ViewModels
                         break;
                     }
                     
+                    // Always update traffic statistics
+                    UpdateTrafficStatistics(existing, newAdapters[i]);
+                    
                     // Check if important properties changed (but NOT just stats)
                     if (HasSignificantChanges(existing, newAdapters[i]))
                     {
@@ -253,6 +291,18 @@ namespace NA_ManagerShortcut.ViewModels
                    existing.IsDhcpEnabled != newAdapter.IsDhcpEnabled;
         }
         
+        private void UpdateTrafficStatistics(NetworkAdapterInfo existing, NetworkAdapterInfo newAdapter)
+        {
+            // Always update traffic stats to keep them current
+            existing.BytesReceived = newAdapter.BytesReceived;
+            existing.BytesSent = newAdapter.BytesSent;
+            existing.Speed = newAdapter.Speed;
+            
+            // Preserve custom preferences
+            newAdapter.CustomName = existing.CustomName;
+            newAdapter.IsHidden = existing.IsHidden;
+        }
+        
         private void UpdateAdapterProperties(NetworkAdapterInfo existing, NetworkAdapterInfo newAdapter)
         {
             // Update properties without triggering unnecessary bindings
@@ -268,11 +318,6 @@ namespace NA_ManagerShortcut.ViewModels
             existing.DefaultGateway = newAdapter.DefaultGateway;
             existing.DnsServers = newAdapter.DnsServers;
             existing.IsDhcpEnabled = newAdapter.IsDhcpEnabled;
-            
-            // Update stats silently
-            existing.BytesReceived = newAdapter.BytesReceived;
-            existing.BytesSent = newAdapter.BytesSent;
-            existing.Speed = newAdapter.Speed;
         }
 
         private async Task ToggleSelectedAdapterAsync()
@@ -400,6 +445,70 @@ namespace NA_ManagerShortcut.ViewModels
         public void StopAutoRefresh()
         {
             _refreshTimer.Stop();
+        }
+
+        private async Task RenameAdapterAsync(object? parameter)
+        {
+            if (parameter is NetworkAdapterInfo adapter)
+            {
+                var dialog = new System.Windows.Controls.TextBox();
+                var window = new System.Windows.Window
+                {
+                    Title = "Rename Adapter",
+                    Content = new System.Windows.Controls.StackPanel
+                    {
+                        Margin = new System.Windows.Thickness(10),
+                        Children =
+                        {
+                            new System.Windows.Controls.TextBlock { Text = $"Enter new name for {adapter.Name}:", Margin = new System.Windows.Thickness(0, 0, 0, 10) },
+                            new System.Windows.Controls.TextBox { Text = adapter.CustomName, Width = 300, Name = "NameTextBox" },
+                            new System.Windows.Controls.StackPanel
+                            {
+                                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                                Margin = new System.Windows.Thickness(0, 10, 0, 0),
+                                Children =
+                                {
+                                    new System.Windows.Controls.Button { Content = "OK", Width = 75, Margin = new System.Windows.Thickness(0, 0, 5, 0), IsDefault = true },
+                                    new System.Windows.Controls.Button { Content = "Cancel", Width = 75, IsCancel = true }
+                                }
+                            }
+                        }
+                    },
+                    Width = 350,
+                    Height = 150,
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen,
+                    ResizeMode = System.Windows.ResizeMode.NoResize
+                };
+
+                var stackPanel = (System.Windows.Controls.StackPanel)window.Content;
+                var textBox = stackPanel.Children.OfType<System.Windows.Controls.TextBox>().First();
+                var buttonPanel = (System.Windows.Controls.StackPanel)stackPanel.Children[2];
+                var okButton = (System.Windows.Controls.Button)buttonPanel.Children[0];
+                var cancelButton = (System.Windows.Controls.Button)buttonPanel.Children[1];
+
+                okButton.Click += async (s, e) =>
+                {
+                    adapter.CustomName = textBox.Text;
+                    await _preferencesService.SetCustomNameAsync(adapter.DeviceId, textBox.Text);
+                    OnPropertyChanged(nameof(FilteredAdapters));
+                    window.DialogResult = true;
+                };
+
+                cancelButton.Click += (s, e) => window.DialogResult = false;
+
+                window.ShowDialog();
+            }
+        }
+
+        private async Task ToggleHideAdapterAsync(object? parameter)
+        {
+            if (parameter is NetworkAdapterInfo adapter)
+            {
+                adapter.IsHidden = !adapter.IsHidden;
+                await _preferencesService.SetHiddenAsync(adapter.DeviceId, adapter.IsHidden);
+                OnPropertyChanged(nameof(FilteredAdapters));
+            }
         }
     }
 }

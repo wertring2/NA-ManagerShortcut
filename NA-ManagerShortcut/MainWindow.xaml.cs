@@ -178,7 +178,15 @@ namespace NA_ManagerShortcut
         {
             if (sender is ToggleButton toggle && toggle.Tag is NetworkAdapterInfo adapter)
             {
+                // Prevent multiple clicks
+                if (adapter.IsTransitioning)
+                {
+                    e.Handled = true;
+                    return;
+                }
+                
                 e.Handled = true;
+                adapter.IsTransitioning = true; // Set transitioning state
                 toggle.IsEnabled = false; // Disable button during operation
                 
                 // Start debug monitoring
@@ -245,6 +253,7 @@ namespace NA_ManagerShortcut
                 }
                 finally
                 {
+                    adapter.IsTransitioning = false; // Clear transitioning state
                     toggle.IsEnabled = true; // Re-enable button
                 }
             }
@@ -299,6 +308,22 @@ namespace NA_ManagerShortcut
                 
                 Clipboard.SetText(details.ToString());
                 _viewModel.StatusMessage = "Details copied to clipboard";
+            }
+        }
+
+        private void RenameAdapter_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menu && menu.Tag is NetworkAdapterInfo adapter)
+            {
+                _viewModel.RenameAdapterCommand.Execute(adapter);
+            }
+        }
+
+        private void HideAdapter_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menu && menu.Tag is NetworkAdapterInfo adapter)
+            {
+                _viewModel.ToggleHideAdapterCommand.Execute(adapter);
             }
         }
 

@@ -533,67 +533,110 @@ namespace NA_ManagerShortcut.Services
                 ["DeviceId"] = deviceId,
                 ["IP"] = ipAddress,
                 ["Subnet"] = subnetMask,
-                ["Gateway"] = gateway
+                ["Gateway"] = gateway,
+                ["PrimaryDns"] = primaryDns,
+                ["SecondaryDns"] = secondaryDns
             });
             
             return await Task.Run(() =>
             {
                 try
                 {
-                    using var searcher = new ManagementObjectSearcher(
-                        $"SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = True");
+                    // First find the adapter by DeviceID
+                    using var adapterSearcher = new ManagementObjectSearcher(
+                        $"SELECT * FROM Win32_NetworkAdapter WHERE DeviceID = '{deviceId}'");
                     
-                    var configs = searcher.Get();
-                    foreach (ManagementObject config in configs)
+                    var adapters = adapterSearcher.Get();
+                    foreach (ManagementObject adapter in adapters)
                     {
-                        var index = config["Index"]?.ToString();
-                        var adapterSearcher = new ManagementObjectSearcher(
-                            $"SELECT * FROM Win32_NetworkAdapter WHERE Index = {index} AND DeviceID = '{deviceId}'");
+                        var index = adapter["Index"]?.ToString();
+                        if (string.IsNullOrEmpty(index)) continue;
                         
-                        if (adapterSearcher.Get().Count == 0) continue;
-
-                        var ipAddresses = new[] { ipAddress };
-                        var subnetMasks = new[] { subnetMask };
-                        var gateways = new[] { gateway };
-                        var gatewayMetrics = new[] { (ushort)1 };
-
-                        var inParams = config.GetMethodParameters("EnableStatic");
-                        inParams["IPAddress"] = ipAddresses;
-                        inParams["SubnetMask"] = subnetMasks;
-                        var result = config.InvokeMethod("EnableStatic", inParams, null);
-
-                        if (Convert.ToUInt32(result["ReturnValue"]) == 0)
+                        _debugMonitor.LogEvent($"Found adapter with index: {index}", EventType.Info);
+                        
+                        // Now get the configuration for this adapter (don't filter by IPEnabled)
+                        using var configSearcher = new ManagementObjectSearcher(
+                            $"SELECT * FROM Win32_NetworkAdapterConfiguration WHERE Index = {index}");
+                        
+                        var configs = configSearcher.Get();
+                        foreach (ManagementObject config in configs)
                         {
-                            inParams = config.GetMethodParameters("SetGateways");
-                            inParams["DefaultIPGateway"] = gateways;
-                            inParams["GatewayCostMetric"] = gatewayMetrics;
-                            result = config.InvokeMethod("SetGateways", inParams, null);
+                            _debugMonitor.LogEvent("Found configuration, attempting to set static IP", EventType.Info);
 
-                            if (Convert.ToUInt32(result["ReturnValue"]) == 0)
+                            try
                             {
-                                var dnsServers = string.IsNullOrEmpty(secondaryDns) 
-                                    ? new[] { primaryDns } 
-                                    : new[] { primaryDns, secondaryDns };
+                                // Set static IP and subnet mask
+                                var ipAddresses = new[] { ipAddress };
+                                var subnetMasks = new[] { subnetMask };
                                 
-                                inParams = config.GetMethodParameters("SetDNSServerSearchOrder");
-                                inParams["DNSServerSearchOrder"] = dnsServers;
-                                result = config.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
-
-                                var success = Convert.ToUInt32(result["ReturnValue"]) == 0;
-                                StatusChanged?.Invoke(this, success 
-                                    ? "Static IP configured successfully" 
-                                    : "Failed to set DNS servers");
+                                var inParams = config.GetMethodParameters("EnableStatic");
+                                inParams["IPAddress"] = ipAddresses;
+                                inParams["SubnetMask"] = subnetMasks;
                                 
-                                _debugMonitor.LogNetworkOperation("SetStaticIP", deviceId, success, stopwatch.Elapsed);
+                                var result = config.InvokeMethod("EnableStatic", inParams, null);
+                                var returnValue = Convert.ToUInt32(result["ReturnValue"]);
                                 
-                                if (success) AdaptersUpdated?.Invoke(this, EventArgs.Empty);
-                                return success;
+                                _debugMonitor.LogEvent($"EnableStatic returned: {returnValue}", 
+                                    returnValue == 0 ? EventType.Info : EventType.Error);
+                                
+                                if (returnValue != 0)
+                                {
+                                    StatusChanged?.Invoke(this, $"Failed to set static IP. Error code: {returnValue}");
+                                    return false;
+                                }
+                                
+                                // Set gateway if provided
+                                if (!string.IsNullOrWhiteSpace(gateway))
+                                {
+                                    var gateways = new[] { gateway };
+                                    var gatewayMetrics = new[] { (ushort)1 };
+                                    
+                                    inParams = config.GetMethodParameters("SetGateways");
+                                    inParams["DefaultIPGateway"] = gateways;
+                                    inParams["GatewayCostMetric"] = gatewayMetrics;
+                                    
+                                    result = config.InvokeMethod("SetGateways", inParams, null);
+                                    returnValue = Convert.ToUInt32(result["ReturnValue"]);
+                                    
+                                    _debugMonitor.LogEvent($"SetGateways returned: {returnValue}", 
+                                        returnValue == 0 ? EventType.Info : EventType.Warning);
+                                }
+                                
+                                // Set DNS servers if provided
+                                if (!string.IsNullOrWhiteSpace(primaryDns))
+                                {
+                                    var dnsServers = string.IsNullOrWhiteSpace(secondaryDns) 
+                                        ? new[] { primaryDns } 
+                                        : new[] { primaryDns, secondaryDns };
+                                    
+                                    inParams = config.GetMethodParameters("SetDNSServerSearchOrder");
+                                    inParams["DNSServerSearchOrder"] = dnsServers;
+                                    
+                                    result = config.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
+                                    returnValue = Convert.ToUInt32(result["ReturnValue"]);
+                                    
+                                    _debugMonitor.LogEvent($"SetDNSServerSearchOrder returned: {returnValue}", 
+                                        returnValue == 0 ? EventType.Info : EventType.Warning);
+                                }
+                                
+                                StatusChanged?.Invoke(this, "Static IP configured successfully");
+                                _debugMonitor.LogNetworkOperation("SetStaticIP", deviceId, true, stopwatch.Elapsed);
+                                AdaptersUpdated?.Invoke(this, EventArgs.Empty);
+                                return true;
+                            }
+                            catch (Exception ex)
+                            {
+                                _debugMonitor.LogEvent($"Error in WMI method: {ex.Message}", EventType.Error);
+                                StatusChanged?.Invoke(this, $"Error setting static IP: {ex.Message}");
+                                return false;
                             }
                         }
-
-                        StatusChanged?.Invoke(this, "Failed to set static IP");
-                        return false;
                     }
+                    
+                    // If we reach here, no adapter was found
+                    _debugMonitor.LogEvent($"No adapter found with DeviceID: {deviceId}", EventType.Error);
+                    StatusChanged?.Invoke(this, "Network adapter not found");
+                    return false;
                 }
                 catch (Exception ex)
                 {
@@ -615,30 +658,52 @@ namespace NA_ManagerShortcut.Services
             {
                 try
                 {
-                    using var searcher = new ManagementObjectSearcher(
-                        $"SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = True");
+                    _debugMonitor.LogEvent($"Enabling DHCP for device: {deviceId}", EventType.Info);
                     
-                    var configs = searcher.Get();
-                    foreach (ManagementObject config in configs)
+                    // First find the adapter by DeviceID
+                    using var adapterSearcher = new ManagementObjectSearcher(
+                        $"SELECT * FROM Win32_NetworkAdapter WHERE DeviceID = '{deviceId}'");
+                    
+                    var adapters = adapterSearcher.Get();
+                    foreach (ManagementObject adapter in adapters)
                     {
-                        var index = config["Index"]?.ToString();
-                        var adapterSearcher = new ManagementObjectSearcher(
-                            $"SELECT * FROM Win32_NetworkAdapter WHERE Index = {index} AND DeviceID = '{deviceId}'");
+                        var index = adapter["Index"]?.ToString();
+                        if (string.IsNullOrEmpty(index)) continue;
                         
-                        if (adapterSearcher.Get().Count == 0) continue;
-
-                        var result = config.InvokeMethod("EnableDHCP", null);
-                        if (Convert.ToUInt32(result) == 0)
+                        _debugMonitor.LogEvent($"Found adapter with index: {index}", EventType.Info);
+                        
+                        // Get configuration for this adapter
+                        using var configSearcher = new ManagementObjectSearcher(
+                            $"SELECT * FROM Win32_NetworkAdapterConfiguration WHERE Index = {index}");
+                        
+                        var configs = configSearcher.Get();
+                        foreach (ManagementObject config in configs)
                         {
-                            config.InvokeMethod("SetDNSServerSearchOrder", null);
-                            StatusChanged?.Invoke(this, "DHCP enabled successfully");
-                            AdaptersUpdated?.Invoke(this, EventArgs.Empty);
-                            return true;
+                            _debugMonitor.LogEvent("Found configuration, attempting to enable DHCP", EventType.Info);
+                            
+                            var result = config.InvokeMethod("EnableDHCP", null);
+                            var returnValue = Convert.ToUInt32(result);
+                            
+                            _debugMonitor.LogEvent($"EnableDHCP returned: {returnValue}", 
+                                returnValue == 0 ? EventType.Info : EventType.Error);
+                            
+                            if (returnValue == 0)
+                            {
+                                // Also reset DNS to DHCP
+                                config.InvokeMethod("SetDNSServerSearchOrder", null);
+                                StatusChanged?.Invoke(this, "DHCP enabled successfully");
+                                AdaptersUpdated?.Invoke(this, EventArgs.Empty);
+                                return true;
+                            }
+                            
+                            StatusChanged?.Invoke(this, $"Failed to enable DHCP. Error code: {returnValue}");
+                            return false;
                         }
-
-                        StatusChanged?.Invoke(this, "Failed to enable DHCP");
-                        return false;
                     }
+                    
+                    _debugMonitor.LogEvent($"No adapter found with DeviceID: {deviceId}", EventType.Error);
+                    StatusChanged?.Invoke(this, "Network adapter not found");
+                    return false;
                 }
                 catch (Exception ex)
                 {

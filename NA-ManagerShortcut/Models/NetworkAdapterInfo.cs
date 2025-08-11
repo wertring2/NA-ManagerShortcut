@@ -22,6 +22,7 @@ namespace NA_ManagerShortcut.Models
         private int _netConnectionStatus;
         private string _adapterType = string.Empty;
         private double _speed;
+        private bool _isTransitioning;
 
         public string Name
         {
@@ -118,6 +119,28 @@ namespace NA_ManagerShortcut.Models
             get => _speed;
             set { _speed = value; OnPropertyChanged(); OnPropertyChanged(nameof(FormattedSpeed)); }
         }
+
+        public bool IsTransitioning
+        {
+            get => _isTransitioning;
+            set { _isTransitioning = value; OnPropertyChanged(); }
+        }
+
+        private string _customName = string.Empty;
+        public string CustomName
+        {
+            get => _customName;
+            set { _customName = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayName)); }
+        }
+
+        private bool _isHidden;
+        public bool IsHidden
+        {
+            get => _isHidden;
+            set { _isHidden = value; OnPropertyChanged(); }
+        }
+
+        public string DisplayName => !string.IsNullOrWhiteSpace(CustomName) ? CustomName : Name;
 
         public string FormattedBytesReceived => FormatBytes(BytesReceived);
         public string FormattedBytesSent => FormatBytes(BytesSent);

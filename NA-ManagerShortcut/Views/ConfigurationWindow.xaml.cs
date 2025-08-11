@@ -87,37 +87,56 @@ namespace NA_ManagerShortcut.Views
                 }
                 else
                 {
-                    if (!ValidateIpAddress(IpAddressBox.Text) ||
-                        !ValidateIpAddress(SubnetMaskBox.Text) ||
-                        !ValidateIpAddress(DefaultGatewayBox.Text))
+                    // Trim all input values
+                    var ipAddress = IpAddressBox.Text?.Trim() ?? "";
+                    var subnetMask = SubnetMaskBox.Text?.Trim() ?? "";
+                    var defaultGateway = DefaultGatewayBox.Text?.Trim() ?? "";
+                    
+                    // IP Address and Subnet Mask are required
+                    if (!ValidateIpAddress(ipAddress))
                     {
-                        MessageBox.Show("Please enter valid IP addresses.", "Validation Error", 
+                        MessageBox.Show($"Please enter a valid IP address.\nCurrent value: '{IpAddressBox.Text}'", "Validation Error", 
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    
+                    if (!ValidateIpAddress(subnetMask))
+                    {
+                        MessageBox.Show($"Please enter a valid subnet mask.\nCurrent value: '{SubnetMaskBox.Text}'", "Validation Error", 
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    
+                    // Default Gateway is optional but must be valid if provided
+                    if (!string.IsNullOrWhiteSpace(defaultGateway) && !ValidateIpAddress(defaultGateway))
+                    {
+                        MessageBox.Show($"Please enter a valid default gateway address.\nCurrent value: '{DefaultGatewayBox.Text}'", "Validation Error", 
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
-                    var primaryDns = StaticDnsRadio.IsChecked == true ? PreferredDnsBox.Text : "";
-                    var secondaryDns = StaticDnsRadio.IsChecked == true ? AlternateDnsBox.Text : "";
+                    var primaryDns = StaticDnsRadio.IsChecked == true ? PreferredDnsBox.Text?.Trim() ?? "" : "";
+                    var secondaryDns = StaticDnsRadio.IsChecked == true ? AlternateDnsBox.Text?.Trim() ?? "" : "";
 
                     if (!string.IsNullOrEmpty(primaryDns) && !ValidateIpAddress(primaryDns))
                     {
-                        MessageBox.Show("Please enter a valid primary DNS address.", "Validation Error", 
+                        MessageBox.Show($"Please enter a valid primary DNS address.\nCurrent value: '{PreferredDnsBox.Text}'", "Validation Error", 
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
                     if (!string.IsNullOrEmpty(secondaryDns) && !ValidateIpAddress(secondaryDns))
                     {
-                        MessageBox.Show("Please enter a valid secondary DNS address.", "Validation Error", 
+                        MessageBox.Show($"Please enter a valid secondary DNS address.\nCurrent value: '{AlternateDnsBox.Text}'", "Validation Error", 
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
                     success = await _adapterService.SetStaticIpAsync(
                         _adapter.DeviceId,
-                        IpAddressBox.Text,
-                        SubnetMaskBox.Text,
-                        DefaultGatewayBox.Text,
+                        ipAddress,
+                        subnetMask,
+                        defaultGateway,
                         primaryDns,
                         secondaryDns);
                 }
@@ -143,7 +162,21 @@ namespace NA_ManagerShortcut.Views
         private bool ValidateIpAddress(string ipAddress)
         {
             if (string.IsNullOrWhiteSpace(ipAddress)) return false;
-            return IPAddress.TryParse(ipAddress, out _);
+            
+            // Remove any extra spaces
+            ipAddress = ipAddress.Trim();
+            
+            // Try to parse the IP address
+            if (IPAddress.TryParse(ipAddress, out var parsedIp))
+            {
+                // Make sure it's IPv4 format
+                if (parsedIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    return true;
+                }
+            }
+            
+            return false;
         }
 
         private void DhcpRadio_Checked(object sender, RoutedEventArgs e)
