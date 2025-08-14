@@ -400,7 +400,6 @@
                     </StackPanel>
                 </Grid>
             </Border>
-
             <tb:TaskbarIcon x:Name="TrayIcon"
                           ToolTipText="Network Adapter Manager"
                           IconSource="favicon.ico"

@@ -9,7 +9,8 @@
       "Bash(find:*)",
       "Bash(dotnet build:*)",
       "Bash(powershell.exe:*)",
-      "Bash(cmd.exe /c \"dir D:\\GitHub\\NA-ManagerShortcut\\NA-ManagerShortcut\\*.ico /s /b\")"
+      "Bash(cmd.exe /c \"dir D:\\GitHub\\NA-ManagerShortcut\\NA-ManagerShortcut\\*.ico /s /b\")",
+      "Bash(cmd.exe:*)"
     ],
     "deny": []
   }
